@@ -322,14 +322,55 @@ func (r *RouterGroup) PUT(relativePath string, handlers ...HandlerFunc) {
 	r.RouterGroup.PUT(relativePath, r.L.handlersToGinHandleFuncs(handlers)...)
 }
 
-// CORSMiddleware 跨域
+// CORSMiddleware 跨域 (允许所有来源，不推荐在生产环境使用)
+//
+// Deprecated: 此函数允许任意来源访问，存在安全风险。
+// 请使用 CORSMiddlewareWithOrigins 并指定允许的来源白名单。
 func CORSMiddleware() HandlerFunc {
+	return CORSMiddlewareWithOrigins(nil)
+}
+
+// CORSMiddlewareWithOrigins 跨域中间件，支持来源白名单
+//
+// allowedOrigins: 允许的来源列表，例如 []string{"https://example.com", "https://app.example.com"}
+//   - 如果为 nil 或空切片，则允许所有来源 (不安全，仅用于开发环境)
+//   - 如果指定了白名单，则只有匹配的来源才会被允许
+//   - 支持 "*" 作为通配符表示允许所有来源
+func CORSMiddlewareWithOrigins(allowedOrigins []string) HandlerFunc {
+	// 构建快速查找的 map
+	originsMap := make(map[string]bool)
+	allowAll := len(allowedOrigins) == 0
+	for _, origin := range allowedOrigins {
+		if origin == "*" {
+			allowAll = true
+			break
+		}
+		originsMap[origin] = true
+	}
 
 	return func(c *Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		origin := c.Request.Header.Get("Origin")
+
+		if allowAll {
+			// 允许所有来源时，不能同时设置 Credentials
+			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		} else if origin != "" && originsMap[origin] {
+			// 来源在白名单中，返回具体的 origin 并允许 credentials
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+			c.Writer.Header().Set("Vary", "Origin")
+		} else if origin != "" {
+			// 来源不在白名单中，不设置 CORS 头，浏览器将拒绝请求
+			if c.Request.Method == "OPTIONS" {
+				c.AbortWithStatus(403)
+				return
+			}
+			c.Next()
+			return
+		}
+
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, token, accept, origin, Cache-Control, X-Requested-With, appid, noncestr, sign, timestamp")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT,DELETE,PATCH")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
