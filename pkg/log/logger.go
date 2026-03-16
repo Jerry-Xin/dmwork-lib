@@ -17,26 +17,32 @@ var errorLogger *zap.Logger
 var warnLogger *zap.Logger
 var testLogger *zap.Logger
 var atom = zap.NewAtomicLevel()
-var configOnce sync.Once
+var mu sync.RWMutex
+var configured bool
 
-// ensureConfigured ensures the logger is configured exactly once.
-// It uses sync.Once to prevent race conditions during concurrent access.
+// ensureConfigured ensures the logger is configured with default options
+// if it hasn't been configured yet. Safe for concurrent use.
 func ensureConfigured() {
-	configOnce.Do(func() {
+	mu.Lock()
+	defer mu.Unlock()
+	if !configured {
 		doConfigure(NewOptions())
-	})
+		configured = true
+	}
 }
 
 // Configure configures the logger with the provided options.
-// This function is safe for concurrent use - only the first call takes effect.
+// This function is safe for concurrent use and always takes effect,
+// allowing reconfiguration of the logger at any time.
 func Configure(opts *Options) {
-	configOnce.Do(func() {
-		doConfigure(opts)
-	})
+	mu.Lock()
+	defer mu.Unlock()
+	doConfigure(opts)
+	configured = true
 }
 
 // doConfigure performs the actual logger configuration.
-// This should only be called via sync.Once to ensure thread safety.
+// Callers must hold mu before calling this function.
 func doConfigure(opts *Options) {
 	atom.SetLevel(opts.Level)
 	core := zapcore.NewCore(
@@ -105,7 +111,9 @@ func doConfigure(opts *Options) {
 // resetForTesting resets the logger state for testing purposes.
 // This allows tests to reconfigure the logger with different options.
 func resetForTesting() {
-	configOnce = sync.Once{}
+	mu.Lock()
+	defer mu.Unlock()
+	configured = false
 	logger = nil
 	errorLogger = nil
 	warnLogger = nil
@@ -140,25 +148,37 @@ func timeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
 // Info Info
 func Info(msg string, fields ...zap.Field) {
 	ensureConfigured()
-	logger.Info(msg, fields...)
+	mu.RLock()
+	l := logger
+	mu.RUnlock()
+	l.Info(msg, fields...)
 }
 
 // Debug Debug
 func Debug(msg string, fields ...zap.Field) {
 	ensureConfigured()
-	logger.Debug(msg, fields...)
+	mu.RLock()
+	l := logger
+	mu.RUnlock()
+	l.Debug(msg, fields...)
 }
 
 // Error Error
 func Error(msg string, fields ...zap.Field) {
 	ensureConfigured()
-	errorLogger.Error(msg, fields...)
+	mu.RLock()
+	l := errorLogger
+	mu.RUnlock()
+	l.Error(msg, fields...)
 }
 
 // Warn Warn
 func Warn(msg string, fields ...zap.Field) {
 	ensureConfigured()
-	warnLogger.Warn(msg, fields...)
+	mu.RLock()
+	l := warnLogger
+	mu.RUnlock()
+	l.Warn(msg, fields...)
 }
 
 // Log Log

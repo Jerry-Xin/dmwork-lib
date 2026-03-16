@@ -27,7 +27,7 @@ func TestLoggerConcurrent(t *testing.T) {
 	numGoroutines := 100
 
 	// Start many goroutines that all try to log concurrently
-	// This tests that the sync.Once properly handles concurrent access
+	// This tests that the mutex properly handles concurrent access
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
 		go func(id int) {
