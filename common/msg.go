@@ -2,12 +2,46 @@ package common
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	imlog "github.com/dmwork-org/dmwork-lib/pkg/log"
 	"github.com/dmwork-org/dmwork-lib/pkg/util"
 	"go.uber.org/zap"
 )
+
+// spacePrefixRe matches Space-prefixed UIDs: "s" + hex spaceId + "_" + rest.
+// Current UID format is 32-char hex (0-9a-f only), so no real UID starts with "s".
+var spacePrefixRe = regexp.MustCompile(`^(s[0-9a-f]+_)`)
+
+// StripSpacePrefix extracts the real UID from a Space-prefixed UID (e.g. "sd7d36a_uid" -> "uid").
+// Returns unchanged if no prefix is present.
+func StripSpacePrefix(s string) string {
+	loc := spacePrefixRe.FindStringIndex(s)
+	if loc == nil {
+		return s
+	}
+	return s[loc[1]:]
+}
+
+// extractSpacePrefix returns the prefix part (e.g. "sd7d36a_") or "" if none.
+func extractSpacePrefix(s string) string {
+	m := spacePrefixRe.FindString(s)
+	return m
+}
+
+// unifySpacePrefix ensures both UIDs carry the same Space prefix.
+// If one has a prefix and the other does not, the prefix is copied to the other.
+func unifySpacePrefix(a, b string) (string, string) {
+	pa := extractSpacePrefix(a)
+	pb := extractSpacePrefix(b)
+	if pa != "" && pb == "" {
+		b = pa + b
+	} else if pb != "" && pa == "" {
+		a = pb + a
+	}
+	return a, b
+}
 
 // ContentType 正文类型
 type ContentType int
@@ -153,11 +187,21 @@ func (c ContentType) Int() int {
 	return int(c)
 }
 
-// GetFakeChannelIDWith GetFakeChannelIDWith
+// GetFakeChannelIDWith builds a deterministic DM channelID from two UIDs.
+// Supports both old format ("uid1@uid2") and Space-prefixed format ("sd7d36a_uid1@sd7d36a_uid2").
+// When one UID has a Space prefix and the other does not, the prefix is auto-filled.
 func GetFakeChannelIDWith(fromUID, toUID string) string {
+	// Unify Space prefix so both sides are consistent.
+	fromUID, toUID = unifySpacePrefix(fromUID, toUID)
+
+	// Use stripped (real) UIDs for CRC32 sorting to preserve order consistency
+	// regardless of whether prefix is present.
+	fromReal := StripSpacePrefix(fromUID)
+	toReal := StripSpacePrefix(toUID)
+
 	// TODO：这里可能会出现相等的情况 ，如果相等可以截取一部分再做hash直到不相等，后续完善
-	fromUIDHash := util.HashCrc32(fromUID)
-	toUIDHash := util.HashCrc32(toUID)
+	fromUIDHash := util.HashCrc32(fromReal)
+	toUIDHash := util.HashCrc32(toReal)
 	if fromUIDHash > toUIDHash {
 		return fmt.Sprintf("%s@%s", fromUID, toUID)
 	}
@@ -173,16 +217,17 @@ func IsFakeChannel(channelID string) bool {
 	return strings.Contains(channelID, "@")
 }
 
-// 获取fakeChannelID里的非uid的uid
+// GetToChannelIDWithFakeChannelID extracts the other party's real UID from a fakeChannelID.
+// Matching is done on stripped UIDs so it works with both old and Space-prefixed formats.
+// Always returns the stripped (real) UID for DB queries.
 func GetToChannelIDWithFakeChannelID(fakeChannelID string, uid string) string {
 	channelIDs := strings.Split(fakeChannelID, "@")
-	toChannelID := fakeChannelID
-	if len(channelIDs) == 2 {
-		if channelIDs[0] == uid {
-			toChannelID = channelIDs[1]
-		} else {
-			toChannelID = channelIDs[0]
-		}
+	if len(channelIDs) != 2 {
+		return fakeChannelID
 	}
-	return toChannelID
+	strippedUID := StripSpacePrefix(uid)
+	if StripSpacePrefix(channelIDs[0]) == strippedUID {
+		return StripSpacePrefix(channelIDs[1])
+	}
+	return StripSpacePrefix(channelIDs[0])
 }
