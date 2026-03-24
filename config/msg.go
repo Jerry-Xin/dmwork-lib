@@ -398,11 +398,15 @@ func (c *Context) IMSyncUserConversation(uid string, version int64, msgCount int
 // }
 
 // IMGetChannelMaxSeq
-func (c *Context) IMGetChannelMaxSeq(channelID string, channelType uint8) (*ChannelMaxSeqResp, error) {
-	resp, err := network.Get(c.cfg.WuKongIM.APIURL+"/channel/max_message_seq", map[string]string{
+func (c *Context) IMGetChannelMaxSeq(channelID string, channelType uint8, loginUID ...string) (*ChannelMaxSeqResp, error) {
+	params := map[string]string{
 		"channel_id":   channelID,
 		"channel_type": fmt.Sprintf("%d", channelType),
-	}, c.wkIMManagerTokenHeader())
+	}
+	if len(loginUID) > 0 && loginUID[0] != "" {
+		params["login_uid"] = loginUID[0]
+	}
+	resp, err := network.Get(c.cfg.WuKongIM.APIURL+"/channel/max_message_seq", params, c.wkIMManagerTokenHeader())
 	if err != nil {
 		return nil, err
 	}
