@@ -80,15 +80,21 @@ func (f FileDirMigrationSource) findMigrations(dir http.FileSystem, migrations *
 	for _, info := range files {
 
 		if strings.HasSuffix(info.Name(), ".sql") {
-			sqlFile, err := dir.Open(info.Name())
-			if err != nil {
-				return fmt.Errorf("Error while opening %s: %s", info.Name(), err)
-			}
+			migration, err := func() (*migrate.Migration, error) {
+				sqlFile, err := dir.Open(info.Name())
+				if err != nil {
+					return nil, fmt.Errorf("Error while opening %s: %s", info.Name(), err)
+				}
+				defer sqlFile.Close()
 
-			migration, err := migrate.ParseMigration(info.Name(), sqlFile)
-			sqlFile.Close()
+				m, err := migrate.ParseMigration(info.Name(), sqlFile)
+				if err != nil {
+					return nil, fmt.Errorf("Error while parsing %s: %s", info.Name(), err)
+				}
+				return m, nil
+			}()
 			if err != nil {
-				return fmt.Errorf("Error while parsing %s: %s", info.Name(), err)
+				return err
 			}
 			*migrations = append(*migrations, migration)
 
