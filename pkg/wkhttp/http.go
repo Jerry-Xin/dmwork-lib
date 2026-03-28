@@ -353,18 +353,19 @@ func CORSMiddleware(allowedOrigins ...string) HandlerFunc {
 		if len(allowedOrigins) == 0 {
 			// No whitelist: allow all origins, no credentials
 			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+			c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, token, accept, origin, Cache-Control, X-Requested-With, appid, noncestr, sign, timestamp")
+			c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
 		} else {
-			// Whitelist mode: check if origin is allowed
+			// Whitelist mode: only set CORS headers when origin matches
+			// Always set Vary: Origin in whitelist mode for proper caching
+			c.Writer.Header().Set("Vary", "Origin")
 			if _, ok := originSet[origin]; ok {
 				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 				c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+				c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, token, accept, origin, Cache-Control, X-Requested-With, appid, noncestr, sign, timestamp")
+				c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
 			}
-			// Always set Vary: Origin in whitelist mode for proper caching
-			c.Writer.Header().Set("Vary", "Origin")
 		}
-
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, token, accept, origin, Cache-Control, X-Requested-With, appid, noncestr, sign, timestamp")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)

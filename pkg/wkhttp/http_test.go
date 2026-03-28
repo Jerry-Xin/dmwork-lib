@@ -206,6 +206,14 @@ func TestCORSMiddleware_WithDisallowedOrigin(t *testing.T) {
 	if got := w.Header().Get("Vary"); got != "Origin" {
 		t.Errorf("Vary = %q, want %q", got, "Origin")
 	}
+
+	// Should NOT set Allow-Methods or Allow-Headers for disallowed origin
+	if got := w.Header().Get("Access-Control-Allow-Methods"); got != "" {
+		t.Errorf("Access-Control-Allow-Methods = %q, want empty for disallowed origin", got)
+	}
+	if got := w.Header().Get("Access-Control-Allow-Headers"); got != "" {
+		t.Errorf("Access-Control-Allow-Headers = %q, want empty for disallowed origin", got)
+	}
 }
 
 func TestCORSMiddleware_PreflightRequest(t *testing.T) {
